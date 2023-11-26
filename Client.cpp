@@ -54,8 +54,8 @@ int main(int argc, char *argv[]) {
         std::cerr << "Error getting disk information" << std::endl;
         return -1;
     }
-    int totalSectors;
-    fscanf(diskInfo, "%d", &totalSectors);
+    long long int totalSectors;
+    fscanf(diskInfo, "%lld", &totalSectors);
     pclose(diskInfo);
 
     int clientSocket;
@@ -79,11 +79,11 @@ int main(int argc, char *argv[]) {
     std::thread senderThread(sendToServer, clientSocket);
 
      // Read disk and send data block by block (each block of 4MB)
-    int sectorsPerBlock = (totalSectors / 10) * 512 * 1024;  // 4MB in sectors
+    long long int sectorsPerBlock = (totalSectors / 10) * 512 * 1024;  // 4MB in sectors
     int blockCount = 0;
     while (blockCount < 10) {
         char command[100];
-        sprintf(command, "dd if=%s bs=512 skip=%d count=%d", diskPath, blockCount * sectorsPerBlock, sectorsPerBlock);
+        sprintf(command, "dd if=%s bs=512 skip=%lld count=%lld", diskPath, blockCount * sectorsPerBlock, sectorsPerBlock);
         FILE *pipe = popen(command, "r");
         if (!pipe) {
             std::cerr << "Error executing dd command" << std::endl;
