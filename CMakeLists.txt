@@ -17,3 +17,5 @@ target_compile_options(client PRIVATE -pthread)
 
 # 服务器端程序
 add_executable(server server.cpp)
+target_link_libraries(server PRIVATE Threads::Threads)
+target_compile_options(server PRIVATE -pthread)
