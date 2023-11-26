@@ -14,7 +14,7 @@
 #include <string>
 
 #define SERVER_PORT 8888
-#define BUFFER_SIZE 4194304  // 4MB
+#define BUFFER_SIZE 10*1024*1024  // 4MB
 
 #define NUMBERLOOPS 1000
 

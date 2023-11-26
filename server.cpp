@@ -3,15 +3,49 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 #define SERVER_PORT 8888
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 30*1024*1024
+
+
+std::queue<std::pair<char*, size_t>> dataQueue;
+std::mutex dataMutex;
+std::condition_variable dataCV;
+
+void writeToFile() {
+    std::ofstream outputFile("full_partition_backup.dd", std::ios::binary);
+    if (!outputFile.is_open()) {
+        std::cerr << "Error creating output file" << std::endl;
+        exit(-1);
+    }
+
+    while (true) {
+        std::unique_lock<std::mutex> lock(dataMutex);
+        dataCV.wait(lock, [] { return !dataQueue.empty(); });
+
+        auto dataPair = dataQueue.front();
+        dataQueue.pop();
+        lock.unlock();
+        
+        char* data = dataPair.first;
+        size_t dataSize = dataPair.second;
+
+        outputFile.write(data, dataSize);
+        delete[] data; // Free allocated memory
+    }
+
+    outputFile.close();
+}
 
 int main() {
     int serverSocket, clientSocket;
     struct sockaddr_in serverAddr, clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
-    char buffer[BUFFER_SIZE];
+    char* buffer = new char[BUFFER_SIZE];
 
     // 创建 TCP 服务器套接字
     if ((serverSocket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -46,27 +80,27 @@ int main() {
 
     std::cout << "Client connected" << std::endl;
 
-    // 创建一个合并后的分区文件
-    std::ofstream outputFile("full_partition_backup.dd", std::ios::binary);
-    if (!outputFile.is_open()) {
-        std::cerr << "Error creating output file" << std::endl;
-        return -1;
-    }
+    // Start writer thread
+    std::thread writerThread(writeToFile);
 
-    // 持续接收并写入文件，直到客户端结束发送
+    // ... skipping to the part where we receive data ...
+
     while (true) {
+        char *buffer = new char[BUFFER_SIZE];
         ssize_t bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
         if (bytesRead <= 0) {
+            delete[] buffer;
             break;
         }
-        outputFile.write(buffer, bytesRead);
+
+        std::unique_lock<std::mutex> lock(dataMutex);
+        dataQueue.push(std::make_pair(buffer, bytesRead));
+        dataCV.notify_one();
     }
 
     // 关闭连接和文件
     close(clientSocket);
-    outputFile.close();
     close(serverSocket);
-
     std::cout << "Received and merged backup files into full_partition_backup.dd" << std::endl;
 
     return 0;
