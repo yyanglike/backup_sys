@@ -10,9 +10,13 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstdio>
+#include <fstream>
+#include <string>
 
 #define SERVER_PORT 8888
 #define BUFFER_SIZE 4194304  // 4MB
+
+#define NUMBERLOOPS 1000
 
 std::queue<std::pair<char*, size_t>> dataQueue;
 std::mutex dataMutex;
@@ -49,14 +53,48 @@ int main(int argc, char *argv[]) {
     int serverPort = std::atoi(argv[3]);
 
     // Get total sector count of the disk partition
-    FILE *diskInfo = popen(("fdisk -l " + std::string(diskPath) + " | grep 'sectors' | awk '{print $7}'").c_str(), "r");
-    if (!diskInfo) {
-        std::cerr << "Error getting disk information" << std::endl;
-        return -1;
+    // FILE *diskInfo = popen(("fdisk -l " + std::string(diskPath) + " | grep 'sectors' | awk '{print $7}'").c_str(), "r");
+    // if (!diskInfo) {
+    //     std::cerr << "Error getting disk information" << std::endl;
+    //     return -1;
+    // }
+
+
+    // long long int totalSectors;
+    // fscanf(diskInfo, "%lld", &totalSectors);
+    // pclose(diskInfo);
+
+    //从/dev/datto0下面获取datto0
+
+    std::string device = "sda";  // replace with your device name
+
+
+    std::string devicePath(diskPath);
+    std::string prefix = "/dev/";
+
+    // Check if the devicePath starts with the prefix
+    if (devicePath.substr(0, prefix.size()) == prefix) {
+        // Get the part after the prefix
+        std::string deviceName = devicePath.substr(prefix.size());
+
+        std::cout << "Device name: " << deviceName << std::endl;  // Output: "datto0"
+        device = deviceName;
+    } else {
+        std::cerr << "Device path does not start with the expected prefix." << std::endl;
     }
+
+    std::ifstream file("/sys/block/" + device + "/size");
+    if (!file.is_open()) {
+        std::cerr << "Failed to open size file for device " << device << "\n";
+        return 1;
+    }
+
     long long int totalSectors;
-    fscanf(diskInfo, "%lld", &totalSectors);
-    pclose(diskInfo);
+    file >> totalSectors;
+    file.close();
+
+
+    std::cout << "tatal sectors:" << totalSectors << std::endl;
 
     int clientSocket;
     struct sockaddr_in serverAddr;
@@ -79,11 +117,13 @@ int main(int argc, char *argv[]) {
     std::thread senderThread(sendToServer, clientSocket);
 
      // Read disk and send data block by block (each block of 4MB)
-    long long int sectorsPerBlock = (totalSectors / 10) * 512 * 1024;  // 4MB in sectors
+    long long int sectorsPerBlock = ((totalSectors+NUMBERLOOPS -1) / NUMBERLOOPS) ;  // 4MB in sectors
+    std::cout << "SectorsPerBlock is :" << sectorsPerBlock << std::endl;
     int blockCount = 0;
-    while (blockCount < 10) {
+    while (blockCount < NUMBERLOOPS) {
         char command[100];
         sprintf(command, "dd if=%s bs=512 skip=%lld count=%lld", diskPath, blockCount * sectorsPerBlock, sectorsPerBlock);
+        std::cout << "Command: " << command << std::endl;  // Print the command
         FILE *pipe = popen(command, "r");
         if (!pipe) {
             std::cerr << "Error executing dd command" << std::endl;
@@ -115,7 +155,7 @@ int main(int argc, char *argv[]) {
 
         // Wait until data is sent before reading next block
         while (!dataQueue.empty()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
 
