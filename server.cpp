@@ -17,7 +17,11 @@ std::mutex dataMutex;
 std::condition_variable dataCV;
 
 void writeToFile() {
-    std::ofstream outputFile("full_partition_backup.dd", std::ios::binary);
+    const size_t GB = 1024 * 1024 * 1024;
+    const size_t MAX_SIZE = 100 * GB;
+    size_t currentFileSize = 0;
+    int fileIndex = 0;
+    std::ofstream outputFile("full_partition_backup" + std::to_string(fileIndex) + ".dd", std::ios::binary);
     if (!outputFile.is_open()) {
         std::cerr << "Error creating output file" << std::endl;
         exit(-1);
@@ -34,12 +38,26 @@ void writeToFile() {
         char* data = dataPair.first;
         size_t dataSize = dataPair.second;
 
+        // Check if the data size exceeds the limit of the current file
+        if (currentFileSize + dataSize > MAX_SIZE) {
+            // Close the current file and open a new one
+            outputFile.close();
+            outputFile.open("full_partition_backup" + std::to_string(++fileIndex) + ".dd", std::ios::binary);
+            if (!outputFile.is_open()) {
+                std::cerr << "Error creating output file" << std::endl;
+                exit(-1);
+            }
+            currentFileSize = 0;
+        }
+
         outputFile.write(data, dataSize);
+        currentFileSize += dataSize;
         delete[] data; // Free allocated memory
     }
 
     outputFile.close();
 }
+
 
 int main() {
     int serverSocket, clientSocket;
@@ -97,6 +115,8 @@ int main() {
         dataQueue.push(std::make_pair(buffer, bytesRead));
         dataCV.notify_one();
     }
+
+    writerThread.join();
 
     // 关闭连接和文件
     close(clientSocket);
